@@ -17,7 +17,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -106,6 +106,7 @@ jobs:
           TARGET_SHA="${{ steps.resolve.outputs.target_sha }}"
           MODE="${{ steps.resolve.outputs.mode }}"
           git checkout main
+          echo "base_sha=$(git rev-parse HEAD)" >> $GITHUB_ENV
           if [ "$MODE" = "manual" ]; then
             # Hard reset allows both upgrade and rollback
             git reset --hard "$TARGET_SHA"
@@ -113,13 +114,14 @@ jobs:
             git merge "$TARGET_SHA" --no-edit
           fi
 
-      - name: Restore workflow file
+      - name: Keep local workflow files
         if: steps.check.outputs.needs_update == 'true'
         run: |
-          # Always keep our own workflow file, never let upstream overwrite it
-          git checkout HEAD@{1} -- .github/workflows/sync-upstream.yml 2>/dev/null || true
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: restore sync-upstream workflow after sync"
+          # GITHUB_TOKEN cannot create/update workflow files in many repos.
+          # Keep this fork's workflow definitions and sync only application code.
+          git restore --source="$base_sha" --staged --worktree -- .github/workflows 2>/dev/null || true
+          if ! git diff --cached --quiet -- .github/workflows; then
+            git commit -m "chore: keep local workflow files after upstream sync"
           fi
 
       - name: Push
